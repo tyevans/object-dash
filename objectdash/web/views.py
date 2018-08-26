@@ -1,4 +1,5 @@
 import os
+import time
 import uuid
 
 import cv2
@@ -15,7 +16,11 @@ def classify_image_from_bytes(image_np):
     detectors = PBObjectDetector.objects.filter(active=True).all()
     annotations = {}
     for detector in detectors:
-        annotations[detector.name] = detector.annotate(image_np)
+        start_time = time.time()
+        annotations[detector.name] = {
+            "results": detector.annotate(image_np)
+        }
+        annotations[detector.name]['runtime'] = time.time() - start_time
     return annotations
 
 
@@ -66,11 +71,11 @@ class SingleImageObjectDetectionView(TemplateView):
             annotations = classify_image_from_bytes(image_np)
 
             for name, annotation_group in annotations.items():
-                annos = [a for a in annotation_group if a.score >= min_confidence]
+                annos = [a for a in annotation_group['results'] if a.score >= min_confidence]
                 vis_image = visualize_annotation(image_np.copy(), annos)
                 image_crops = crop_annotations(image_np, annos)
                 results.append({
-                    "name": name,
+                    "name": name[:16] + "... ({:2f} secs)".format(annotation_group['runtime']),
                     "visualization": vis_image,
                     "annotations": [
                         {"score": a.score, "label": a.label, "crop_href": crop}
