@@ -34,8 +34,15 @@ class Rect:
 
 class Mask:
 
-    def __init__(self, points):
-        self.points = points
+    def __init__(self, mask):
+        self.width, self.height = mask.shape[:2]
+        self.mask = mask
+
+    def draw(self, image_np, color):
+        for s_row, m_row in zip(image_np, self.mask):
+            for s_pixel, m_pixel in zip(s_row, m_row):
+                if m_pixel == 1:
+                    s_pixel[...] = np.average([s_pixel, color], axis=0)
 
 
 class Annotation:
@@ -51,23 +58,37 @@ class Annotation:
         if draw_label:
             x = self.rect.x1 * width + 5
             y = self.rect.y1 * height + 5
-            # cv2.putText(image, self.label, (x, y), cv2.FONT_HERSHEY_PLAIN, 2, color, 2, cv2.LINE_AA)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            # cv2.putText(image_np, self.label, (x, y), font, 4, (255, 255, 255), 2, cv2.LINE_AA)
 
     @classmethod
     def from_results(cls, num_detections, labels, scores, boxes):
         annotations = []
         zipped = zip(labels[:num_detections], scores[:num_detections], boxes[:num_detections])
         for i, (label, score, box) in enumerate(zipped):
-            annotations.append(Annotation(label, score, box))
+            annotations.append(cls(label, score, box))
         return annotations
 
     def crop(self, image_np):
         return self.rect.crop(image_np)
 
+
 class MaskedAnnotation(Annotation):
 
-    def __init__(self, label, box, score, mask):
+    def __init__(self, label, score, box, mask):
+        super(MaskedAnnotation, self).__init__(label, score, box)
         self.mask = Mask(mask)
+
+    def draw(self, image_np, color, draw_label=True, draw_rect=False):
+        self.mask.draw(image_np, color)
+
+    @classmethod
+    def from_results(cls, num_detections, labels, scores, boxes, masks):
+        annotations = []
+        zipped = zip(labels[:num_detections], scores[:num_detections], boxes[:num_detections], masks[:num_detections])
+        for i, (label, score, box, mask) in enumerate(zipped):
+            annotations.append(cls(label, score, box, mask))
+        return annotations
 
 
 class ObjectDetector:
@@ -137,8 +158,8 @@ class ObjectDetector:
             boxes = output_dict['detection_boxes'][0].tolist()
             scores = output_dict['detection_scores'][0]
             if 'detection_masks' in output_dict:
-                masks = output_dict['detection_masks'][0].tolist()
-                annotations = Annotation.from_results(num_detections, labels, scores, boxes)
+                masks = output_dict['detection_masks'][0]
+                annotations = MaskedAnnotation.from_results(num_detections, labels, scores, boxes, masks)
             else:
                 annotations = Annotation.from_results(num_detections, labels, scores, boxes)
         return annotations

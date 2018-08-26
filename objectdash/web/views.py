@@ -1,4 +1,5 @@
 import os
+import random
 import time
 import uuid
 
@@ -26,7 +27,7 @@ def classify_image_from_bytes(image_np):
 
 def visualize_annotation(image_np, annotations):
     for annotation in annotations:
-        annotation.draw(image_np, (255, 0, 0))
+        annotation.draw(image_np, get_random_color())
     image_id = str(uuid.uuid4())
     image_path = os.path.join("vis/annotations/", image_id + '.jpg')
     image_name = os.path.join(settings.STATIC_ROOT, image_path)
@@ -44,6 +45,11 @@ def crop_annotations(image_np, annotations):
         cv2.imwrite(image_name, crop_image)
         crops.append(static(image_path))
     return crops
+
+
+def get_random_color():
+    x = list(range(0, 255))
+    return np.array([random.choice(x), random.choice(x), random.choice(x)], dtype=np.uint8)
 
 
 class IndexView(TemplateView):
