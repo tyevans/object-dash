@@ -86,3 +86,8 @@ Subsequent requests take ~0.15 seconds to complete)
 Once the results load you should see tabs for each active model, with the annotated image and extracted crops:
 
 ![Single Image Object Detection - Results](./docs/images/object_detection_results.png)
+
+If you are using an object detector that provides masks (like mask-rcnn), these will be displayed instead of the 
+bounding rect:
+
+ ![Masked Results](./docs/images/mask_results.png)
