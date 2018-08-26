@@ -2,35 +2,53 @@
 
 ## Setup and Installation:
 
+In `objectdash/settings.py` set `STATIC_ROOT` and `MEDIA_ROOT` to point to the directories where static and user 
+upload content should be stored.:
+
+```
+STATIC_ROOT = '/home/baddad/workspace/objectdash/objectdash/web/static'
+MEDIA_ROOT = '/home/baddad/workspace/objectdash/objectdash/web/static/media'
+```
+
 Install project requirements:
 
 ```
 pipenv install .
 ```
 
-Clone the tensorflow-models repository and add `models/research` to your python path.
+Clone the tensorflow-models repository and add `models/research` to your python path to make the object_detection API 
+available.
 
 ```
 git clone https://github.com/tensorflow/models
 echo "export PYTHONPATH=`pwd`/models/research:$PYTHONPATH" >> ~/.bashrc
+source ~/.bashrc
 ```
 
-Create the django database:
+You'll need to compile the protobuf objects before the object_detection API can be used:
 
 ```
-pipenv run manage.py migrate
+protoc ./object_detection/protos/*.proto --python_out = ./
+```
+
+Create the django database (a sqlite database in the project's root directory).  
+
+If you want to use another database see [Django's documentation](https://docs.djangoproject.com/en/2.1/intro/tutorial02/#database-setup). 
+
+```
+pipenv run ./manage.py migrate
 ```
 
 Create an admin super user:
 
 ```
-pipenv run manage.py createsuperuser
+pipenv run ./manage.py createsuperuser
 ```
 
 Run the development server:
 
 ```
-pipenv run manage.py runserver
+$ pipenv run ./manage.py runserver
 ```
 
 ## Adding an object detection model
