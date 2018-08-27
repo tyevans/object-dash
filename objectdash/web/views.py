@@ -86,7 +86,8 @@ class SingleImageObjectDetectionView(TemplateView):
                 vis_image = visualize_annotation(image_np.copy(), annos)
                 image_crops = crop_annotations(image_np, annos)
                 results.append({
-                    "name": name[:16] + "... ({:2f} secs)".format(annotation_group['runtime']),
+                    "visible_name": "{}... ({:.2f} seconds".format(name[:16], annotation_group['runtime']),
+                    "name": name,
                     "visualization": vis_image,
                     "annotations": [
                         {"score": a.score, "label": a.label, "crop_href": crop}
