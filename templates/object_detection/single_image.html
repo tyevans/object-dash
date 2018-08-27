@@ -48,21 +48,25 @@
                          id="{{ resultset.name }}-container" role="tabpanel">
                         <div class="container">
                             <div class="row">
-                                <div class="col-md-9">
+                                <div class="jumbotron">
                                     <img class="img-thumbnail" src="{{ resultset.visualization }}">
                                 </div>
-                                <div class="col-md-3">
+                            </div>
+                            <div class="row">
+
                                     {% for annotation in resultset.annotations %}
+                                    <div class="col-md-4">
                                         <div class="media">
-                                            <img class="mr-3 img-thumbnail" src="{{ annotation.crop_href }}"
+                                            <img class="mr-4 img-thumbnail" src="{{ annotation.crop_href }}"
                                                  alt="{{ annotation.label.name }}">
                                             <div class="media-body">
                                                 <h5 class="mt-0">{{ annotation.label.name }}</h5>
                                                 Score: {{ annotation.score }}
                                             </div>
                                         </div>
+                                    </div>
                                     {% endfor %}
-                                </div>
+
                             </div>
                         </div>
 
