@@ -47,9 +47,14 @@ def crop_annotations(image_np, annotations):
     return crops
 
 
-def get_random_color():
+def get_random_color(num_channels=3):
     x = list(range(0, 255))
-    return np.array([random.choice(x), random.choice(x), random.choice(x)], dtype=np.uint8)
+    if num_channels == 1:
+        return [random.choice(x)]
+    if num_channels == 3:
+        return [random.choice(x), random.choice(x), random.choice(x)]
+    if num_channels == 4:
+        return [random.choice(x), random.choice(x), random.choice(x), 255]
 
 
 class IndexView(TemplateView):
