@@ -1,6 +1,6 @@
 from django.db import models
 
-from objectdash.object_detector import ObjectDetector
+from objectdash.detect.object_detector import ObjectDetector
 
 
 class ObjectDetectorClosed(Exception):
@@ -9,14 +9,16 @@ class ObjectDetectorClosed(Exception):
 
 _object_detectors = {}
 
+
 def object_detector_upload_to(instance, filename):
-    return 'object_detectors/pb/{0}'.format(instance.name)
+    return 'object_detectors/pb/{0}/{1}'.format(instance.name, filename)
+
 
 class PBObjectDetector(models.Model):
     id = models.UUIDField(primary_key=True)
     name = models.TextField(null=False)
     pb_file = models.FileField(help_text="frozen_inference_graph.pb", upload_to=object_detector_upload_to, null=False)
-    label_file = models.FileField(help_text="labels.pbtxt", upload_to='data/label_files', null=False)
+    label_file = models.FileField(help_text="labels.pbtxt", upload_to=object_detector_upload_to, null=False)
     num_classes = models.IntegerField(null=False, default=90)
     active = models.BooleanField(default=True, null=False)
 
@@ -41,7 +43,6 @@ class PBObjectDetector(models.Model):
 
     def close(self):
         return self.get_detector().close()
-
 
     def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
         global _object_detectors
