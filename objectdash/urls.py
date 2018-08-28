@@ -25,6 +25,8 @@ urlpatterns = [
     path("", views.IndexView.as_view(), name="index"),
     path("object_detection/single_image", views.SingleImageObjectDetectionView.as_view(),
          name="single-image-object-detection"),
+    path("object_detection/verification_report", views.VerificationReportView.as_view(),
+         name="verification-report"),
 ]
 
 if settings.DEBUG:

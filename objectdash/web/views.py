@@ -7,10 +7,14 @@ import cv2
 import numpy as np
 from django.conf import settings
 from django.contrib.staticfiles.templatetags.staticfiles import static
+from django.core.paginator import Paginator
+from django.http import JsonResponse
+from django.utils.text import slugify
+from django.views import View
 from django.views.generic import TemplateView
 
-from objectdash.web.forms import ClassifyImageForm
-from objectdash.web.models import PBObjectDetector
+from objectdash.web.forms import ClassifyImageForm, VerificationReportForm
+from objectdash.web.models import PBObjectDetector, ExampleImage
 
 
 def classify_image_from_bytes(image_np):
@@ -86,8 +90,8 @@ class SingleImageObjectDetectionView(TemplateView):
                 vis_image = visualize_annotation(image_np.copy(), annos)
                 image_crops = crop_annotations(image_np, annos)
                 results.append({
-                    "visible_name": "{}... ({:.2f} seconds".format(name[:16], annotation_group['runtime']),
-                    "name": name,
+                    "visible_name": "{}... ({:.2f} seconds)".format(name[:16], annotation_group['runtime']),
+                    "name": slugify(name),
                     "visualization": vis_image,
                     "annotations": [
                         {"score": a.score, "label": a.label, "crop_href": crop}
@@ -98,3 +102,57 @@ class SingleImageObjectDetectionView(TemplateView):
             "form": form,
             "results": results
         })
+
+
+class VerificationReportView(TemplateView):
+    template_name = "object_detection/verification_report.html"
+
+    def form_valid(self, request, form):
+        cleaned = form.cleaned_data
+
+        images = ExampleImage.objects
+
+        labels = cleaned.get('labels')
+        if labels:
+            if not isinstance(labels, list):
+                labels = [labels]
+        else:
+            labels = []
+        if labels:
+            images = ExampleImage.objects.filter(annotations__label__in=labels)
+
+        source = cleaned.get('source')
+        if source:
+            images = images.filter(source=source)
+        return images
+
+    def handle_form(self, request, form):
+        if form.is_valid():
+            images = self.form_valid(request, form)
+        else:
+            images = ExampleImage.objects
+        print(images.count())
+        page = request.GET.get('page', 1)
+        paginator = Paginator(images.all(), 25)
+        print(paginator.get_page(page), page)
+        images_page = paginator.get_page(page)
+
+        return self.render_to_response({
+            "form": form,
+            "images_page": images_page
+        })
+
+    def get(self, request, *args, **kwargs):
+        form = VerificationReportForm(request.GET)
+        return self.handle_form(request, form)
+
+    def post(self, request, *args, **kwargs):
+        form = VerificationReportForm(request.POST, request.FILES)
+        return self.handle_form(request, form)
+
+
+class ExampleImageJsonView(View):
+
+    def __get__(self, request, *args, **kwargs):
+        request.GET.get("labels")
+        return JsonResponse()
