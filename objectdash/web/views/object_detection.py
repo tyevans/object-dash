@@ -1,21 +1,23 @@
-import os
-import random
 import time
-import uuid
 
 import cv2
 import numpy as np
-from django.conf import settings
 from django.contrib.staticfiles.templatetags.staticfiles import static
+from django.utils.text import slugify
 from django.views.generic import TemplateView
 
+from objectdash.visualize import visualize_annotation, crop_annotations
 from objectdash.web.forms import ClassifyImageForm
-from objectdash.web.models import PBObjectDetector
+from objectdash.web.models import ObjectDetector
 
 
 def classify_image_from_bytes(image_np):
-    detectors = PBObjectDetector.objects.filter(active=True).all()
+    detectors = ObjectDetector.objects.filter(active=True).all()
     annotations = {}
+
+    if image_np.shape[2] == 4:
+        image_np = cv2.cvtColor(image_np, cv2.COLOR_BGRA2BGR)
+
     for detector in detectors:
         start_time = time.time()
         annotations[detector.name] = {
@@ -23,42 +25,6 @@ def classify_image_from_bytes(image_np):
         }
         annotations[detector.name]['runtime'] = time.time() - start_time
     return annotations
-
-
-def visualize_annotation(image_np, annotations):
-    for annotation in annotations:
-        annotation.draw(image_np, get_random_color())
-    image_id = str(uuid.uuid4())
-    image_path = os.path.join("vis/annotations/", image_id + '.jpg')
-    image_name = os.path.join(settings.STATIC_ROOT, image_path)
-    cv2.imwrite(image_name, image_np)
-    return static(image_path)
-
-
-def crop_annotations(image_np, annotations):
-    crops = []
-    for annotation in annotations:
-        crop_image = annotation.crop(image_np)
-        image_id = str(uuid.uuid4())
-        image_path = os.path.join("vis/annotations/crops/", image_id + '.jpg')
-        image_name = os.path.join(settings.STATIC_ROOT, image_path)
-        cv2.imwrite(image_name, crop_image)
-        crops.append(static(image_path))
-    return crops
-
-
-def get_random_color(num_channels=3):
-    x = list(range(0, 255))
-    if num_channels == 1:
-        return [random.choice(x)]
-    if num_channels == 3:
-        return [random.choice(x), random.choice(x), random.choice(x)]
-    if num_channels == 4:
-        return [random.choice(x), random.choice(x), random.choice(x), 255]
-
-
-class IndexView(TemplateView):
-    template_name = "index.html"
 
 
 class SingleImageObjectDetectionView(TemplateView):
@@ -83,11 +49,11 @@ class SingleImageObjectDetectionView(TemplateView):
 
             for name, annotation_group in annotations.items():
                 annos = [a for a in annotation_group['results'] if a.score >= min_confidence]
-                vis_image = visualize_annotation(image_np.copy(), annos)
-                image_crops = crop_annotations(image_np, annos)
+                vis_image = static(visualize_annotation(image_np.copy(), annos))
+                image_crops = [static(x) for x in crop_annotations(image_np, annos)]
                 results.append({
-                    "visible_name": "{}... ({:.2f} seconds".format(name[:16], annotation_group['runtime']),
-                    "name": name,
+                    "visible_name": "{}... ({:.2f} seconds)".format(name[:16], annotation_group['runtime']),
+                    "name": slugify(name),
                     "visualization": vis_image,
                     "annotations": [
                         {"score": a.score, "label": a.label, "crop_href": crop}

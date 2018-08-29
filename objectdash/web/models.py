@@ -1,4 +1,9 @@
+import os
+import uuid
+
+import tensorflow as tf
 from django.db import models
+from object_detection.utils import dataset_util
 
 from objectdash.detect.object_detector import ObjectDetector
 
@@ -14,8 +19,22 @@ def object_detector_upload_to(instance, filename):
     return 'object_detectors/pb/{0}/{1}'.format(instance.name, filename)
 
 
-class PBObjectDetector(models.Model):
-    id = models.UUIDField(primary_key=True)
+def example_image_upload_to(instance, filename):
+    base, ext = os.path.splitext(filename)
+    id = str(uuid.uuid4())
+    a, b, c, = list(str(id)[:3])
+    return 'example_images/{}/{}/{}/{}{}'.format(a, b, c, id, ext)
+
+
+def tf_record_file_upload_to(instance, filename):
+    base, ext = os.path.splitext(filename)
+    id = str(uuid.uuid4())
+    a, b, c, = list(str(id)[:3])
+    return 'tf_records/{}/{}/{}/{}{}'.format(a, b, c, id, ext)
+
+
+class ObjectDetector(models.Model):
+    id = models.AutoField(primary_key=True)
     name = models.TextField(null=False)
     pb_file = models.FileField(help_text="frozen_inference_graph.pb", upload_to=object_detector_upload_to, null=False)
     label_file = models.FileField(help_text="labels.pbtxt", upload_to=object_detector_upload_to, null=False)
@@ -57,3 +76,84 @@ class PBObjectDetector(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class AnnotatedImage(models.Model):
+    class Meta:
+        ordering = ['id']
+
+    id = models.AutoField(primary_key=True)
+    image_file = models.ImageField(upload_to=example_image_upload_to, height_field="height", width_field="width")
+    width = models.IntegerField()
+    height = models.IntegerField()
+    source = models.TextField()
+
+    def tf_example(self):
+        _, ext = os.path.split(self.image_file.name)
+        image_format = ext[1:].lower()
+
+        xmins, ymins, xmaxs, ymaxs = [], [], [], []
+        classes_text = []
+        classes = []
+
+        annotations = self.annotations.all()
+        for annotation in annotations:
+            xmins.append(annotation.xmin / self.width)
+            ymins.append(annotation.ymin / self.height)
+            xmaxs.append(annotation.xmax / self.width)
+            ymaxs.append(annotation.ymax / self.height)
+            classes_text.append(bytes(annotation.label.label, 'utf-8'))
+            classes.append(annotation.label.id)
+
+        tf_example = tf.train.Example(features=tf.train.Features(feature={
+            'image/height': dataset_util.int64_feature(self.height),
+            'image/width': dataset_util.int64_feature(self.width),
+            'image/filename': dataset_util.bytes_feature(bytes(self.image_file.name, 'utf-8')),
+            'image/source_id': dataset_util.bytes_feature(bytes(self.image_file.name, 'utf-8')),
+            'image/encoded': dataset_util.bytes_feature(open(self.image_file.path, 'rb').read()),
+            'image/format': dataset_util.bytes_feature(bytes(image_format, 'utf-8')),
+            'image/object/bbox/xmin': dataset_util.float_list_feature(xmins),
+            'image/object/bbox/xmax': dataset_util.float_list_feature(xmaxs),
+            'image/object/bbox/ymin': dataset_util.float_list_feature(ymins),
+            'image/object/bbox/ymax': dataset_util.float_list_feature(ymaxs),
+            'image/object/class/text': dataset_util.bytes_list_feature(classes_text),
+            'image/object/class/label': dataset_util.int64_list_feature(classes),
+        }))
+        return tf_example
+
+
+class AnnotationLabel(models.Model):
+    class Meta:
+        app_label = "web"
+        verbose_name = "Annotation Label"
+        verbose_name_plural = "Annotation Labels"
+
+    id = models.AutoField(primary_key=True)
+    label = models.TextField(null=False)
+
+
+class Annotation(models.Model):
+    class Meta:
+        app_label = "web"
+        verbose_name = "Annotation"
+        verbose_name_plural = "Annotations"
+
+    id = models.AutoField(primary_key=True)
+    label = models.ForeignKey(AnnotationLabel, null=False, on_delete=models.CASCADE)
+    example_image = models.ForeignKey(AnnotatedImage, related_name="annotations", on_delete=models.CASCADE, null=False)
+    xmin = models.IntegerField(null=False)
+    xmax = models.IntegerField(null=False)
+    ymin = models.IntegerField(null=False)
+    ymax = models.IntegerField(null=False)
+
+
+class TFRecord(models.Model):
+    class Meta:
+        app_label = "web"
+        verbose_name = "Tensorflow Record"
+        verbose_name_plural = "Tensorflow Records"
+
+    id = models.AutoField(primary_key=True)
+    annotation_labels = models.ManyToManyField(AnnotationLabel)
+    tf_record_file = models.FileField(upload_to=tf_record_file_upload_to)
+
