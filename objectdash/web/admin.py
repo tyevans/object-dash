@@ -3,10 +3,10 @@ from django.db import models
 from django.forms import widgets
 from django.utils.safestring import mark_safe
 
-from objectdash.web.models import PBObjectDetector, ExampleImage
+from objectdash.web.models import ObjectDetector, AnnotatedImage
 
 
-@admin.register(PBObjectDetector)
+@admin.register(ObjectDetector)
 class PBObjectDetectorAdmin(admin.ModelAdmin):
     fields = ('name', 'pb_file', 'label_file', 'active')
     list_display = ('name', 'active')
@@ -16,7 +16,7 @@ class PBObjectDetectorAdmin(admin.ModelAdmin):
     }
 
 
-@admin.register(ExampleImage)
+@admin.register(AnnotatedImage)
 class ExampleImageAdmin(admin.ModelAdmin):
     fields = ('image_file', )
     list_display = ('image_file_thumbnail', 'get_annotation_labels', 'source')

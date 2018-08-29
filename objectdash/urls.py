@@ -29,6 +29,8 @@ urlpatterns = [
          od_views.SingleImageObjectDetectionView.as_view(), name="single-image-object-detection"),
     path("object_detection/verification_report",
          anno_views.AnnotationListView.as_view(), name="verification-report"),
+    path("object_detection/tf_record_export",
+         anno_views.TFRecordExportView.as_view(), name="tf-record-export"),
 ]
 
 if settings.DEBUG:

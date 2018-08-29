@@ -8,11 +8,11 @@ from django.views.generic import TemplateView
 
 from objectdash.visualize import visualize_annotation, crop_annotations
 from objectdash.web.forms import ClassifyImageForm
-from objectdash.web.models import PBObjectDetector
+from objectdash.web.models import ObjectDetector
 
 
 def classify_image_from_bytes(image_np):
-    detectors = PBObjectDetector.objects.filter(active=True).all()
+    detectors = ObjectDetector.objects.filter(active=True).all()
     annotations = {}
 
     if image_np.shape[2] == 4:

@@ -1,6 +1,6 @@
 from django import forms
 
-from objectdash.web.models import ExampleAnnotation, ExampleImage, PBObjectDetector
+from objectdash.web.models import Annotation, AnnotatedImage, ObjectDetector
 
 
 class UploadImageForm(forms.Form):
@@ -23,8 +23,8 @@ class AnnotationFilterForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super(AnnotationFilterForm, self).__init__(*args, **kwargs)
 
-        sources = ExampleImage.objects.all().values_list("source", "source").distinct()
+        sources = AnnotatedImage.objects.all().values_list("source", "source").distinct()
         self.fields['source'].choices = list(set(sources))
 
-        labels = ExampleAnnotation.objects.all().values_list("label", "label").distinct()
+        labels = Annotation.objects.all().values_list("label", "label").distinct()
         self.fields['labels'].choices = labels
