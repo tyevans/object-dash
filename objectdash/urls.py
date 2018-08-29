@@ -18,15 +18,17 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path
 
-from objectdash.web import views
+import objectdash.web.views.annotations as anno_views
+import objectdash.web.views.object_detection as od_views
+from objectdash.web.views import index as index_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path("", views.IndexView.as_view(), name="index"),
-    path("object_detection/single_image", views.SingleImageObjectDetectionView.as_view(),
-         name="single-image-object-detection"),
-    path("object_detection/verification_report", views.VerificationReportView.as_view(),
-         name="verification-report"),
+    path("", index_views.IndexView.as_view(), name="index"),
+    path("object_detection/single_image",
+         od_views.SingleImageObjectDetectionView.as_view(), name="single-image-object-detection"),
+    path("object_detection/verification_report",
+         anno_views.AnnotationListView.as_view(), name="verification-report"),
 ]
 
 if settings.DEBUG:
