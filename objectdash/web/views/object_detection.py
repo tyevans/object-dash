@@ -2,17 +2,18 @@ import time
 
 import cv2
 import numpy as np
+from django.conf import settings
 from django.contrib.staticfiles.templatetags.staticfiles import static
 from django.utils.text import slugify
 from django.views.generic import TemplateView
 
 from objectdash.visualize import visualize_annotation, crop_annotations
 from objectdash.web.forms import ClassifyImageForm
-from objectdash.web.models import ObjectDetector
+from objectdash.web.models import ObjectDetectionModel
 
 
 def classify_image_from_bytes(image_np):
-    detectors = ObjectDetector.objects.filter(active=True).all()
+    detectors = ObjectDetectionModel.objects.filter(active=True).all()
     annotations = {}
 
     if image_np.shape[2] == 4:
@@ -49,8 +50,8 @@ class SingleImageObjectDetectionView(TemplateView):
 
             for name, annotation_group in annotations.items():
                 annos = [a for a in annotation_group['results'] if a.score >= min_confidence]
-                vis_image = static(visualize_annotation(image_np.copy(), annos))
-                image_crops = [static(x) for x in crop_annotations(image_np, annos)]
+                vis_image = settings.MEDIA_URL + visualize_annotation(image_np.copy(), annos)
+                image_crops = [settings.MEDIA_URL + x for x in crop_annotations(image_np, annos)]
                 results.append({
                     "visible_name": "{}... ({:.2f} seconds)".format(name[:16], annotation_group['runtime']),
                     "name": slugify(name),

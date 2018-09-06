@@ -27,8 +27,8 @@ urlpatterns = [
     path("", index_views.IndexView.as_view(), name="index"),
     path("object_detection/single_image",
          od_views.SingleImageObjectDetectionView.as_view(), name="single-image-object-detection"),
-    path("object_detection/verification_report",
-         anno_views.AnnotationListView.as_view(), name="verification-report"),
+    path("object_detection/annotation_browser",
+         anno_views.AnnotationListView.as_view(), name="annotation-browser"),
     path("object_detection/tf_record_export",
          anno_views.TFRecordExportView.as_view(), name="tf-record-export"),
 ]

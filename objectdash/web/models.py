@@ -4,8 +4,10 @@ import uuid
 import tensorflow as tf
 from django.db import models
 from object_detection.utils import dataset_util
+from object_detection import model_hparams
+from object_detection import model_lib
 
-from objectdash.detect.object_detector import ObjectDetector
+from objectdash.detect.object_detector import ObjectDetector as TFObjectDetector
 
 
 class ObjectDetectorClosed(Exception):
@@ -26,18 +28,19 @@ def example_image_upload_to(instance, filename):
     return 'example_images/{}/{}/{}/{}{}'.format(a, b, c, id, ext)
 
 
-def tf_record_file_upload_to(instance, filename):
-    base, ext = os.path.splitext(filename)
-    id = str(uuid.uuid4())
-    a, b, c, = list(str(id)[:3])
-    return 'tf_records/{}/{}/{}/{}{}'.format(a, b, c, id, ext)
+class UntrainableModelException(Exception):
+    pass
 
 
-class ObjectDetector(models.Model):
+class ObjectDetectionModel(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.TextField(null=False)
     pb_file = models.FileField(help_text="frozen_inference_graph.pb", upload_to=object_detector_upload_to, null=False)
     label_file = models.FileField(help_text="labels.pbtxt", upload_to=object_detector_upload_to, null=False)
+    ckpt_data_file = models.FileField(null=True, upload_to=object_detector_upload_to)
+    ckpt_index_file = models.FileField(null=True, upload_to=object_detector_upload_to)
+    ckpt_meta_file = models.FileField(null=True, upload_to=object_detector_upload_to)
+    pipeline_config_template = models.FileField(null=True, upload_to=object_detector_upload_to)
     num_classes = models.IntegerField(null=False, default=90)
     active = models.BooleanField(default=True, null=False)
 
@@ -50,8 +53,8 @@ class ObjectDetector(models.Model):
         global _object_detectors
         od = _object_detectors.get(self.name)
         if od is None:
-            od = _object_detectors[self.name] = ObjectDetector(self.pb_file.path, self.label_file.path,
-                                                               self.num_classes)
+            od = _object_detectors[self.name] = TFObjectDetector(self.pb_file.path, self.label_file.path,
+                                                                 self.num_classes)
         return od
 
     def annotate(self, image_np):
@@ -66,13 +69,32 @@ class ObjectDetector(models.Model):
     def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
         global _object_detectors
         if self.name in _object_detectors and self.active is False:
-            print("Tearing down", self.name)
             self.close()
             del _object_detectors[self.name]
         elif self.name not in _object_detectors and self.active is True:
             pass
 
         super().save(force_insert, force_update, using, update_fields)
+
+    def train_new_model(self, image_set, hparam_overrides='', num_train_steps=100, num_eval_steps=30):
+        if any(x is None for x in [self.ckpt_data_file, self.ckpt_index_file, self.ckpt_meta_file]):
+            raise UntrainableModelException
+
+        model_dir = object_detector_upload_to(self, '')
+        config = tf.estimator.RunConfig(model_dir=model_dir)
+        train_and_eval_dict = model_lib.create_estimator_and_inputs(
+            run_config=config,
+            hparams=model_hparams.create_hparams(hparam_overrides),
+            pipeline_config_path=FLAGS.pipeline_config_path,
+            train_steps=num_train_steps,
+            eval_steps=num_eval_steps)
+        estimator = train_and_eval_dict['estimator']
+        train_input_fn = train_and_eval_dict['train_input_fn']
+        eval_input_fn = train_and_eval_dict['eval_input_fn']
+        eval_on_train_input_fn = train_and_eval_dict['eval_on_train_input_fn']
+        predict_input_fn = train_and_eval_dict['predict_input_fn']
+        train_steps = train_and_eval_dict['train_steps']
+        eval_steps = train_and_eval_dict['eval_steps']
 
     def __str__(self):
         return self.name
@@ -147,6 +169,13 @@ class Annotation(models.Model):
     ymax = models.IntegerField(null=False)
 
 
+def tf_record_file_upload_to(instance, filename):
+    base, ext = os.path.splitext(filename)
+    id = str(uuid.uuid4())
+    a, b, c, = list(str(id)[:3])
+    return 'tf_records/{}/{}/{}/{}{}'.format(a, b, c, id, ext)
+
+
 class TFRecord(models.Model):
     class Meta:
         app_label = "web"
@@ -154,6 +183,5 @@ class TFRecord(models.Model):
         verbose_name_plural = "Tensorflow Records"
 
     id = models.AutoField(primary_key=True)
-    annotation_labels = models.ManyToManyField(AnnotationLabel)
     tf_record_file = models.FileField(upload_to=tf_record_file_upload_to)
 
