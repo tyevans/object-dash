@@ -41,6 +41,7 @@ class Command(BaseCommand):
         parser.add_argument('graph')
         parser.add_argument('label_file')
         parser.add_argument('num_classes', type=int)
+        parser.add_argument('--min_confidence', type=float, default=0.5)
         parser.add_argument('--show_fps', action="store_true", default=False)
 
 
@@ -58,12 +59,13 @@ class Command(BaseCommand):
         count = 0
         last_time = 0
         annotations = None
+        min_confidence = options['min_confidence']
 
         while (True):
             ret, frame = cap.read()
             annotations = self.get_annotations(annotation_queue, annotations, frame, frame_queue)
             if annotations is not None:
-                self.draw_annotations(annotations, frame)
+                self.draw_annotations(annotations, frame, min_confidence)
 
             if options['show_fps']:
                 self.draw_fps(frame, last_time)
@@ -91,9 +93,9 @@ class Command(BaseCommand):
             frame_queue.put(frame)
         return annotations
 
-    def draw_annotations(self, annotations, frame):
+    def draw_annotations(self, annotations, frame, min_confidence):
         for i, annotation in enumerate(annotations):
-            if annotation.score >= 0.5:
+            if annotation.score >= min_confidence:
                 annotation.draw(frame, (0, 255, 0))
 
     def draw_fps(self, frame, last_time):
