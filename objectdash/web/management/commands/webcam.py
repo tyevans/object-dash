@@ -20,7 +20,8 @@ class AnnotationProcessor(Process):
         self.num_classes = num_classes
         self.frame_queue = frame_queue
         self.annotation_queue = annotation_queue
-        self.kwargs = kwargs
+
+        self._last_time = 0
 
     def run(self):
         detector = ObjectDetector(self.graph_file, self.label_file, self.num_classes)
@@ -40,6 +41,7 @@ class Command(BaseCommand):
         parser.add_argument('graph')
         parser.add_argument('label_file')
         parser.add_argument('num_classes', type=int)
+        parser.add_argument('--show_fps', action="store_true", default=False)
 
 
     def handle(self, *args, **options):
@@ -63,8 +65,9 @@ class Command(BaseCommand):
             if annotations is not None:
                 self.draw_annotations(annotations, frame)
 
-            self.draw_fps(frame, last_time)
-            last_time = time.time()
+            if options['show_fps']:
+                self.draw_fps(frame, last_time)
+
             cv2.imshow('frame', frame)
 
             try:
@@ -97,7 +100,8 @@ class Command(BaseCommand):
         font = cv2.FONT_HERSHEY_PLAIN
         fontScale = 1
         lineType = 2
-        cv2.putText(frame, str(int(1 / (time.time() - last_time))) + " FPS", (10, 40), font,
+        cv2.putText(frame, str(int(1 / (time.time() - self._last_time))) + " FPS", (10, 40), font,
                     fontScale,
                     (0, 0, 255),
                     lineType)
+        self._last_time = time.time()
