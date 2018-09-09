@@ -46,8 +46,10 @@ class Command(BaseCommand):
         parser.add_argument('num_classes', type=int)
         parser.add_argument('--min_confidence', type=float, default=0.5)
         parser.add_argument('--show_fps', action="store_true", default=False)
+        parser.add_argument('--avi_out', default=None)
 
     def handle(self, *args, **options):
+        avi_out = options['avi_out']
         frame_queue = Queue()
         annotation_queue = Queue()
         processor = AnnotationProcessor(options['graph'], options['label_file'], options['num_classes'], frame_queue,
@@ -55,6 +57,9 @@ class Command(BaseCommand):
         processor.start()
 
         cap = cv2.VideoCapture(0)
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        if avi_out:
+            out = cv2.VideoWriter(avi_out, fourcc, 20.0, (640, 480))
 
         ret, frame = cap.read()
         frame_queue.put(frame)
@@ -69,6 +74,8 @@ class Command(BaseCommand):
             annotations = self.get_annotations(annotation_queue, annotations, frame, frame_queue)
             if annotations is not None:
                 self.draw_annotations(annotations, frame, min_confidence)
+                if avi_out:
+                    out.write(frame)
 
             if options['show_fps']:
                 self.draw_fps(frame, last_time)
@@ -85,6 +92,8 @@ class Command(BaseCommand):
             count += 1
 
         cap.release()
+        if avi_out:
+            out.release()
         cv2.destroyAllWindows()
 
     def get_annotations(self, annotation_queue, annotations, frame, frame_queue):
