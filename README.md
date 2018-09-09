@@ -51,6 +51,22 @@ Run the development server:
 $ pipenv run ./manage.py runserver
 ```
 
+### Detecting against a webcam
+
+Use the `webcam` management command to detect in real-time against a camera.
+
+Usage:
+
+```
+./manage.py webcam <path/to/frozen_inference_graph.pb> <path/to/labels.pbtxt> <num_classes>
+```
+
+Example:
+
+```
+./manage.py webcam ./data/models/faster_rcnn_resnet101_coco_2018_01_28/frozen_inference_graph.pb "./media/object_detectors/pb/ssd_resnet50_v1_fpn/labels.pbtxt" 90 --show_fps
+```
+
 ## Adding an object detection model
 
 Download an object detection model from the [Tensorflow object detection model zoo](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/detection_model_zoo.md) and extract its contents. 
