@@ -11,6 +11,7 @@ requests = "*"
 tensorflow = "*"
 django = "*"
 opencv-python = "*"
+pycocotools = "*"
 
 
 [dev-packages]
