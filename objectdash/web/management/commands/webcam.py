@@ -21,8 +21,6 @@ class AnnotationProcessor(Process):
         self.frame_queue = frame_queue
         self.annotation_queue = annotation_queue
 
-        self._last_time = 0
-
     def run(self):
         detector = ObjectDetector(self.graph_file, self.label_file, self.num_classes)
 
@@ -37,18 +35,23 @@ class AnnotationProcessor(Process):
 class Command(BaseCommand):
     help = ''
 
+    def __init__(self):
+        super(Command, self).__init__()
+        self._last_time = 0
+
     def add_arguments(self, parser):
+
         parser.add_argument('graph')
         parser.add_argument('label_file')
         parser.add_argument('num_classes', type=int)
         parser.add_argument('--min_confidence', type=float, default=0.5)
         parser.add_argument('--show_fps', action="store_true", default=False)
 
-
     def handle(self, *args, **options):
         frame_queue = Queue()
         annotation_queue = Queue()
-        processor = AnnotationProcessor(options['graph'], options['label_file'], options['num_classes'], frame_queue, annotation_queue)
+        processor = AnnotationProcessor(options['graph'], options['label_file'], options['num_classes'], frame_queue,
+                                        annotation_queue)
         processor.start()
 
         cap = cv2.VideoCapture(0)
