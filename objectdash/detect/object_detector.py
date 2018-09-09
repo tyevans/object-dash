@@ -71,7 +71,7 @@ class ObjectDetector:
 
             num_detections = int(output_dict['num_detections'][0])
             classes = output_dict['detection_classes'][0].astype(np.uint8)
-            labels = [self.category_index[x] for x in classes]
+            labels = [self.category_index.get(x, {"name": 'Unknown', "id": x}) for x in classes]
             boxes = output_dict['detection_boxes'][0].tolist()
             scores = output_dict['detection_scores'][0]
             if 'detection_masks' in output_dict:

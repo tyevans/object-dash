@@ -59,11 +59,20 @@ class Annotation:
     def draw(self, image_np, color, draw_label=True):
         height, width = image_np.shape[:2]
         self.rect.draw(image_np, color)
+
         if draw_label:
-            x = self.rect.x1 * width + 5
-            y = self.rect.y1 * height + 5
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            # cv2.putText(image_np, self.label, (x, y), font, 4, (255, 255, 255), 2, cv2.LINE_AA)
+            font = cv2.FONT_HERSHEY_PLAIN
+            fontScale = 1
+            lineType = 2
+            x = int(self.rect.x1 * width)
+            y = int(self.rect.y1 * height)
+            label = "{} ({:.2f})".format(self.label['name'], self.score)
+            cv2.putText(image_np, label,
+                        (y, x),
+                        font,
+                        fontScale,
+                        color,
+                        lineType)
 
     @classmethod
     def from_results(cls, num_detections, labels, scores, boxes):
