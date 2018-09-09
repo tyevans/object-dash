@@ -12,6 +12,7 @@ tensorflow = "*"
 django = "*"
 opencv-python = "*"
 pycocotools = "*"
+cython = "*"
 
 
 [dev-packages]
