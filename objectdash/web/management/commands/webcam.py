@@ -54,7 +54,7 @@ class Command(BaseCommand):
         frame_queue.put(frame)
 
         count = 0
-        last_time = time.time()
+        last_time = 0
         annotations = None
 
         while (True):
@@ -64,6 +64,7 @@ class Command(BaseCommand):
                 self.draw_annotations(annotations, frame)
 
             self.draw_fps(frame, last_time)
+            last_time = time.time()
             cv2.imshow('frame', frame)
 
             try:
@@ -73,8 +74,6 @@ class Command(BaseCommand):
             except KeyboardInterrupt:
                 frame_queue.put(None)
                 raise
-
-            last_time = time.time()
             count += 1
 
         cap.release()
@@ -98,7 +97,7 @@ class Command(BaseCommand):
         font = cv2.FONT_HERSHEY_PLAIN
         fontScale = 1
         lineType = 2
-        cv2.putText(frame, str(int((time.time() - last_time) * 1000)) + " FPS", (10, 40), font,
+        cv2.putText(frame, str(int(1 / (time.time() - last_time))) + " FPS", (10, 40), font,
                     fontScale,
                     (0, 0, 255),
                     lineType)
