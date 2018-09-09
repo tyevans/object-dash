@@ -10,23 +10,20 @@ from objectdash.detect.object_detector import ObjectDetector
 
 db.connections.close_all()
 
-outdir = "/home/baddad/workspace/object-dash/media/crops"
-
 
 class AnnotationProcessor(Process):
 
-    def __init__(self, frame_queue, annotation_queue, **kwargs):
+    def __init__(self, graph_file, label_file, num_classes, frame_queue, annotation_queue, **kwargs):
         super(AnnotationProcessor, self).__init__()
+        self.graph_file = graph_file
+        self.label_file = label_file
+        self.num_classes = num_classes
         self.frame_queue = frame_queue
         self.annotation_queue = annotation_queue
         self.kwargs = kwargs
 
     def run(self):
-        detector = ObjectDetector(
-            "/home/baddad/workspace/object-dash/data/models/ssd_resnet50_v1_fpn_shared_box_predictor_640x640_coco14_sync_2018_07_03/frozen_inference_graph.pb",
-            "./media/object_detectors/pb/ssd_resnet50_v1_fpn/labels.pbtxt",
-            90
-        )
+        detector = ObjectDetector(self.graph_file, self.label_file, self.num_classes)
 
         while True:
             frame = self.frame_queue.get()
@@ -39,10 +36,16 @@ class AnnotationProcessor(Process):
 class Command(BaseCommand):
     help = ''
 
-    def handle(self, *args, **kwargs):
+    def add_arguments(self, parser):
+        parser.add_argument('graph')
+        parser.add_argument('label_file')
+        parser.add_argument('num_classes', type=int)
+
+
+    def handle(self, *args, **options):
         frame_queue = Queue()
         annotation_queue = Queue()
-        processor = AnnotationProcessor(frame_queue, annotation_queue)
+        processor = AnnotationProcessor(options['graph'], options['label_file'], options['num_classes'], frame_queue, annotation_queue)
         processor.start()
 
         cap = cv2.VideoCapture(0)
