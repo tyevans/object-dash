@@ -13,6 +13,9 @@ django = "*"
 opencv-python = "*"
 pycocotools = "*"
 cython = "*"
+matplotlib = "*"
+pillow = "*"
+
 
 
 [dev-packages]
