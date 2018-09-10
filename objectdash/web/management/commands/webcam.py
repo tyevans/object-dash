@@ -1,9 +1,12 @@
+from __future__ import division
+
 import os
 import queue
 import time
 from multiprocessing import Process, Queue
 
 import cv2
+import numpy as np
 from django import db
 from django.core.management.base import BaseCommand
 
@@ -37,10 +40,10 @@ class AnnotationProcessor(Process):
 
 class ImageHandler(object):
 
-    def apply_first(self, image_np):
+    def apply_first(self, ret, image_np):
         return image_np
 
-    def apply(self, image_np):
+    def apply(self, ret, image_np):
         return image_np
 
     def close(self):
@@ -53,14 +56,47 @@ class BackgroundSubtractor(ImageHandler):
         self.annotations = None
         self.fgbg = cv2.createBackgroundSubtractorMOG2()
 
-    def apply_first(self, image_np):
-        return self.apply(image_np)
+    def apply_first(self, ret, image_np):
+        return self.apply(ret, image_np)
 
-    def apply(self, image_np):
+    def apply(self, ret, image_np):
         self.fgbg.apply(image_np)
         motion_mask = self.fgbg.apply(image_np)
         self.motion_mask = Mask(motion_mask)
         return self.motion_mask.apply(image_np)
+
+
+class TrackingAnnotation(object):
+
+    def __init__(self, image_np, annotation):
+        self.image_np = image_np
+        self.annotation = annotation
+        self.height, self.width = self.image_np.shape[:2]
+        y1, x1, y2, x2 = self.annotation.rect.translate(self.height, self.width)
+        self.track_window = (x1, y1, x2 - x1, y2 - y1)
+
+        roi = image_np[y1:y2, x1:x2]
+        hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv_roi, np.array((0., 60., 32.)), np.array((180., 255., 255.)))
+        self.roi_hist = cv2.calcHist([hsv_roi], [0], mask, [180], [0, 180])
+        cv2.normalize(self.roi_hist, self.roi_hist, 0, 255, cv2.NORM_MINMAX)
+        self.term_crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 2)
+
+    def step(self, image_np):
+        hsv = cv2.cvtColor(image_np, cv2.COLOR_BGR2HSV)
+        dst = cv2.calcBackProject([hsv], [0], self.roi_hist, [0, 180], 1)
+
+        ret, self.track_window = cv2.meanShift(dst, self.track_window, self.term_crit)
+        x, y, width, height = self.track_window
+
+        self.annotation.rect.x1 = x / self.width
+        self.annotation.rect.x2 = (x + width) / self.width
+
+        self.annotation.rect.y1 = y / self.height
+        self.annotation.rect.y2 = (y + height) / self.height
+
+    def __getattr__(self, item):
+        return getattr(self.annotation, item)
 
 
 class ImageAnnotator(ImageHandler):
@@ -74,20 +110,24 @@ class ImageAnnotator(ImageHandler):
         self.processor.start()
         self.annotations = []
 
-    def apply_first(self, image_np):
+    def apply_first(self, ret, image_np):
         self.anno_frame = image_np.copy()
         self.frame_queue.put(image_np)
+        self.last_annotation = time.time()
         return image_np
 
-    def apply(self, image_np):
+    def apply(self, ret, image_np):
         try:
             self.annotations = self.annotation_queue.get_nowait()
+            # self.annotations = [a for a in self.annotations if a.label['name'] == 'person']
         except queue.Empty:
-            pass
+            if ret:
+                for annotation in self.annotations:
+                    annotation.step(image_np)
         else:
+            self.annotations = [TrackingAnnotation(self.anno_frame, anno) for anno in self.annotations]
             if self.crop_dir:
                 self.crop_annotations()
-
             self.anno_frame = image_np.copy()
             self.frame_queue.put(image_np)
 
@@ -123,12 +163,12 @@ class AVIOutput(ImageHandler):
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         self._output = cv2.VideoWriter(output_path, fourcc, 20.0, (640, 480))
 
-    def apply_first(self, image_np):
-        self._output.write(image_np)
-        return image_np
+    def apply_first(self, ret, image_np):
+        return self.apply(ret, image_np)
 
-    def apply(self, image_np):
-        self._output.write(image_np)
+    def apply(self, ret, image_np):
+        if ret:
+            self._output.write(image_np)
         return image_np
 
     def close(self):
@@ -140,10 +180,10 @@ class FPSCounter(ImageHandler):
     def __init__(self):
         self.last_time = time.time()
 
-    def apply_first(self, image_np):
-        return self.apply(image_np)
+    def apply_first(self, ret, image_np):
+        return self.apply(ret, image_np)
 
-    def apply(self, image_np):
+    def apply(self, ret, image_np):
         font = cv2.FONT_HERSHEY_PLAIN
         fontScale = 1
         lineType = 2
@@ -199,13 +239,13 @@ class Command(BaseCommand):
 
         ret, frame = cap.read()
         for handler in pipeline:
-            frame = handler.apply_first(frame)
+            frame = handler.apply_first(ret, frame)
 
         while (True):
             ret, frame = cap.read()
 
             for handler in pipeline:
-                frame = handler.apply(frame)
+                frame = handler.apply(ret, frame)
 
             cv2.imshow('frame', frame)
             try:

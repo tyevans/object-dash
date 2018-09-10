@@ -26,6 +26,8 @@ class Rect:
         y1, x1, y2, x2 = self.translate(*image_np.shape[:2])
         cv2.rectangle(image_np, (x1, y1), (x2, y2), color, line_width)
 
+    def __str__(self):
+        return "{}, {}, {}, {}".format(self.x1, self.y1, self.x2 ,self.y2)
 
 class Mask:
 
