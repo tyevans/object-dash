@@ -80,7 +80,7 @@ class TrackingAnnotation(object):
         mask = cv2.inRange(hsv_roi, np.array((0., 60., 32.)), np.array((180., 255., 255.)))
         self.roi_hist = cv2.calcHist([hsv_roi], [0], mask, [180], [0, 180])
         cv2.normalize(self.roi_hist, self.roi_hist, 0, 255, cv2.NORM_MINMAX)
-        self.term_crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 2)
+        self.term_crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 1)
 
     def step(self, image_np):
         hsv = cv2.cvtColor(image_np, cv2.COLOR_BGR2HSV)
@@ -119,7 +119,6 @@ class ImageAnnotator(ImageHandler):
     def apply(self, ret, image_np):
         try:
             self.annotations = self.annotation_queue.get_nowait()
-            # self.annotations = [a for a in self.annotations if a.label['name'] == 'person']
         except queue.Empty:
             if ret:
                 for annotation in self.annotations:
