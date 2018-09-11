@@ -18,50 +18,90 @@ db.connections.close_all()
 
 class AnnotationProcessor(Process):
 
-    def __init__(self, graph_file, label_file, num_classes, frame_queue, annotation_queue, **kwargs):
+    def __init__(self, graph_file: str, label_file: str, num_classes: int, frame_queue: Queue, annotation_queue: Queue):
+        """ Dedicated image annotating process.  Sits off to the side
+
+        Pump `None` into the frame queue to exit the process
+
+        :param graph_file: (string) Path to the object detection model's frozen_inference_graph.pb
+        :param label_file: (string) Path to the object detection model's labels.pbtxt
+        :param num_classes: (int) Number of classes the model is trained on (this is 90 for a coco trained model)
+        :param frame_queue: (multiprocessing.Queue) queue where raw images will be provided
+        :param annotation_queue: (multiprocessing.Queue) queue where annotations will be returned
+        """
         super(AnnotationProcessor, self).__init__()
         self.graph_file = graph_file
         self.label_file = label_file
         self.num_classes = num_classes
         self.frame_queue = frame_queue
         self.annotation_queue = annotation_queue
-        self.anno_frame = None
 
     def run(self):
+        # Create our object detector
         detector = ObjectDetector(self.graph_file, self.label_file, self.num_classes)
 
         while True:
+            # Get the next available frame
             frame = self.frame_queue.get()
             if frame is None:
                 break
-            annotations = detector.annotate(frame)
+            # Annotate it
+            annotations = detector.annotate(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            # Pump it into the output queue
             self.annotation_queue.put(annotations)
 
 
 class ImageHandler(object):
+    """ Base class for a process that transforms an image
 
-    def apply_first(self, ret, image_np):
+    Used to build pipelines for processing images
+    """
+
+    def apply_first(self, image_np):
+        """
+        Called on the first image/frame when a pipeline is started
+
+        :param image_np: (np.array) cv2 image array (gbr)
+        :return: (np.array) transformed image
+        """
         return image_np
 
-    def apply(self, ret, image_np):
+    def apply(self, image_np):
+        """
+        Called on all subsequent frames
+
+        :param image_np: (np.array) cv2 image array (gbr)
+        :return: (np.array) transformed image
+        """
         return image_np
 
     def close(self):
+        """
+        Called when processing is complete
+        """
         pass
 
 
 class BackgroundSubtractor(ImageHandler):
 
     def __init__(self):
+        """ Removes background (stationary) elements from an image, accumulating information across multiple images.
+        """
         self.annotations = None
         self.fgbg = cv2.createBackgroundSubtractorMOG2()
+        self.kernel = np.ones((5, 5), np.uint8)
 
-    def apply_first(self, ret, image_np):
-        return self.apply(ret, image_np)
+    def apply_first(self, image_np):
+        return self.apply(image_np)
 
-    def apply(self, ret, image_np):
+    def apply(self, image_np):
         self.fgbg.apply(image_np)
         motion_mask = self.fgbg.apply(image_np)
+
+        motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_CLOSE, self.kernel)
+        # motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_OPEN, self.kernel)
+        motion_mask = cv2.dilate(motion_mask, self.kernel, iterations=1)
+
         self.motion_mask = Mask(motion_mask)
         return self.motion_mask.apply(image_np)
 
@@ -69,6 +109,11 @@ class BackgroundSubtractor(ImageHandler):
 class TrackingAnnotation(object):
 
     def __init__(self, image_np, annotation):
+        """ `Annotation` wrapper that applies meanshift to keep an annotation centered on its target.
+
+        :param image_np: initial image
+        :param annotation: `Annotation` instance
+        """
         self.image_np = image_np
         self.annotation = annotation
         self.height, self.width = self.image_np.shape[:2]
@@ -83,6 +128,10 @@ class TrackingAnnotation(object):
         self.term_crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 1)
 
     def step(self, image_np):
+        """ Updates the wrapped annotation based on the data present in `image_np`
+
+        :param image_np: the current image frame
+        """
         hsv = cv2.cvtColor(image_np, cv2.COLOR_BGR2HSV)
         dst = cv2.calcBackProject([hsv], [0], self.roi_hist, [0, 180], 1)
 
@@ -96,12 +145,22 @@ class TrackingAnnotation(object):
         self.annotation.rect.y2 = (y + height) / self.height
 
     def __getattr__(self, item):
+        """ Present so the underlying annotation object's content is accessible.
+        """
         return getattr(self.annotation, item)
 
 
 class ImageAnnotator(ImageHandler):
 
     def __init__(self, graph, label_file, num_class, crop_dir=None, min_confidence=0.5):
+        """ Annotates images using an `AnnotationProcessor` subprocess
+
+        :param graph_file: (string) Path to the object detection model's frozen_inference_graph.pb
+        :param label_file: (string) Path to the object detection model's labels.pbtxt
+        :param num_classes: (int) Number of classes the model is trained on (this is 90 for a coco trained model)
+        :param crop_dir: (string) Path to directory where annotation crops should be stored
+        :param min_confidence: (float) Minimum confidence score for annotations
+        """
         self.crop_dir = crop_dir
         self.min_confidence = min_confidence
         self.frame_queue = Queue()
@@ -110,25 +169,28 @@ class ImageAnnotator(ImageHandler):
         self.processor.start()
         self.annotations = []
 
-    def apply_first(self, ret, image_np):
+    def apply_first(self, image_np):
         self.anno_frame = image_np.copy()
         self.frame_queue.put(image_np)
         self.last_annotation = time.time()
         return image_np
 
-    def apply(self, ret, image_np):
+    def apply(self, image_np):
         try:
             self.annotations = self.annotation_queue.get_nowait()
         except queue.Empty:
-            if ret:
-                for annotation in self.annotations:
-                    annotation.step(image_np)
+            pass
         else:
+
             self.annotations = [TrackingAnnotation(self.anno_frame, anno) for anno in self.annotations]
             if self.crop_dir:
                 self.crop_annotations()
+
             self.anno_frame = image_np.copy()
             self.frame_queue.put(image_np)
+
+        for annotation in self.annotations:
+            annotation.step(image_np)
 
         self.draw_annotations(image_np)
 
@@ -162,12 +224,11 @@ class AVIOutput(ImageHandler):
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         self._output = cv2.VideoWriter(output_path, fourcc, 20.0, (640, 480))
 
-    def apply_first(self, ret, image_np):
-        return self.apply(ret, image_np)
+    def apply_first(self, image_np):
+        return self.apply(image_np)
 
-    def apply(self, ret, image_np):
-        if ret:
-            self._output.write(image_np)
+    def apply(self, image_np):
+        self._output.write(image_np)
         return image_np
 
     def close(self):
@@ -179,10 +240,10 @@ class FPSCounter(ImageHandler):
     def __init__(self):
         self.last_time = time.time()
 
-    def apply_first(self, ret, image_np):
-        return self.apply(ret, image_np)
+    def apply_first(self, image_np):
+        return self.apply(image_np)
 
-    def apply(self, ret, image_np):
+    def apply(self, image_np):
         font = cv2.FONT_HERSHEY_PLAIN
         fontScale = 1
         lineType = 2
@@ -238,13 +299,13 @@ class Command(BaseCommand):
 
         ret, frame = cap.read()
         for handler in pipeline:
-            frame = handler.apply_first(ret, frame)
+            frame = handler.apply_first(frame)
 
         while (True):
             ret, frame = cap.read()
 
             for handler in pipeline:
-                frame = handler.apply(ret, frame)
+                frame = handler.apply(frame)
 
             cv2.imshow('frame', frame)
             try:
