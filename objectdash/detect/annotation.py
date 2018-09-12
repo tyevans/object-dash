@@ -26,6 +26,16 @@ class Rect:
         y1, x1, y2, x2 = self.translate(*image_np.shape[:2])
         cv2.rectangle(image_np, (x1, y1), (x2, y2), color, line_width)
 
+    def area(self):
+        return (self.x2 - self.x1) * (self.y2 - self.y1)
+
+    def overlap(self, other):
+        area = self.area()
+        dx = min(self.x2, other.x2) - max(self.x1, other.x1)
+        dy = min(self.y2, other.y2) - max(self.y1, other.y1)
+        if (dx >= 0) and (dy >= 0):
+            return dx * dy / area
+
     def __str__(self):
         return "{}, {}, {}, {}".format(self.x1, self.y1, self.x2 ,self.y2)
 

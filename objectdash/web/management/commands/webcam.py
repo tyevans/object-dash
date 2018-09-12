@@ -3,6 +3,7 @@ from __future__ import division
 import os
 import queue
 import time
+import uuid
 from multiprocessing import Process, Queue
 
 import cv2
@@ -46,7 +47,7 @@ class AnnotationProcessor(Process):
             if frame is None:
                 break
             # Annotate it
-            annotations = detector.annotate(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            annotations = detector.annotate(frame)
             # Pump it into the output queue
             self.annotation_queue.put(annotations)
 
@@ -114,28 +115,24 @@ class TrackingAnnotation(object):
         :param image_np: initial image
         :param annotation: `Annotation` instance
         """
-        self.image_np = image_np
+        self.uuid = str(uuid.uuid4())
         self.annotation = annotation
-        self.height, self.width = self.image_np.shape[:2]
+        self.height, self.width = image_np.shape[:2]
+        self.init_tracker(image_np)
+
+    def init_tracker(self, image_np):
         y1, x1, y2, x2 = self.annotation.rect.translate(self.height, self.width)
         self.track_window = (x1, y1, x2 - x1, y2 - y1)
-
-        roi = image_np[y1:y2, x1:x2]
-        hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv_roi, np.array((0., 60., 32.)), np.array((180., 255., 255.)))
-        self.roi_hist = cv2.calcHist([hsv_roi], [0], mask, [180], [0, 180])
-        cv2.normalize(self.roi_hist, self.roi_hist, 0, 255, cv2.NORM_MINMAX)
-        self.term_crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 1)
+        self.tracker = cv2.TrackerCSRT_create()
+        self.tracker.init(image_np, self.track_window)
 
     def step(self, image_np):
         """ Updates the wrapped annotation based on the data present in `image_np`
 
         :param image_np: the current image frame
         """
-        hsv = cv2.cvtColor(image_np, cv2.COLOR_BGR2HSV)
-        dst = cv2.calcBackProject([hsv], [0], self.roi_hist, [0, 180], 1)
 
-        ret, self.track_window = cv2.meanShift(dst, self.track_window, self.term_crit)
+        ret, self.track_window = self.tracker.update(image_np)
         x, y, width, height = self.track_window
 
         self.annotation.rect.x1 = x / self.width
@@ -144,10 +141,42 @@ class TrackingAnnotation(object):
         self.annotation.rect.y1 = y / self.height
         self.annotation.rect.y2 = (y + height) / self.height
 
+        # cv2.imshow("{} - {}".format(self.label['name'], self.uuid), image_np)
+
+    # def __del__(self):
+    #     cv2.destroyWindow("{} - {}".format(self.label['name'], self.uuid))
+
     def __getattr__(self, item):
         """ Present so the underlying annotation object's content is accessible.
         """
         return getattr(self.annotation, item)
+
+
+class AnnotationHandler(object):
+    def apply_first(self, annotation, image_np):
+        return self.apply(annotation, image_np)
+
+    def apply(self, annotation, image_np):
+        pass
+
+
+class AnnotationTracker(AnnotationHandler):
+    def apply(self, annotation, image_np):
+        pass
+
+
+class AnnotationCropper(AnnotationHandler):
+    def apply(self):
+        frame_time = time.time()
+        height, width = self.anno_frame.shape[:2]
+        for i, annotation in enumerate(self.annotations):
+            y1, x1, y2, x2 = annotation.rect.translate(height, width)
+            anno_height = y2 - y1
+            anno_width = x2 - x1
+            if annotation.score >= self.min_confidence and anno_height * anno_width >= 400:
+                label = "{}_{}.jpg".format(annotation.label['name'], int(frame_time))
+                path = os.path.join(self.crop_dir, label)
+                cv2.imwrite(path, annotation.crop(self.anno_frame))
 
 
 class ImageAnnotator(ImageHandler):
@@ -168,6 +197,8 @@ class ImageAnnotator(ImageHandler):
         self.processor = AnnotationProcessor(graph, label_file, num_class, self.frame_queue, self.annotation_queue)
         self.processor.start()
         self.annotations = []
+        self.colors = []
+        self.lag_frames = []
 
     def apply_first(self, image_np):
         self.anno_frame = image_np.copy()
@@ -177,20 +208,33 @@ class ImageAnnotator(ImageHandler):
 
     def apply(self, image_np):
         try:
-            self.annotations = self.annotation_queue.get_nowait()
+            annotations = [anno for anno in self.annotation_queue.get_nowait() if anno.label['name'] == 'person']
         except queue.Empty:
-            pass
+            for annotation in self.annotations:
+                annotation.step(image_np)
         else:
+            self.colors = []
+            final_annos = []
+            for anno in annotations:
+                for existing_anno in self.annotations:
+                    if anno.label != existing_anno.label:
+                        continue
 
-            self.annotations = [TrackingAnnotation(self.anno_frame, anno) for anno in self.annotations]
-            if self.crop_dir:
-                self.crop_annotations()
-
+                    if 0.85 <= existing_anno.rect.area() / anno.rect.area() <= 1.15:
+                        overlap = anno.rect.overlap(existing_anno.rect)
+                        if overlap and overlap > 0.7:
+                            self.colors.append((0, 255, 0))
+                            existing_anno.rect = anno.rect
+                            existing_anno.init_tracker(self.anno_frame)
+                            final_annos.append(existing_anno)
+                            break
+                else:
+                    self.colors.append((0, 0, 255))
+                    final_annos.append(TrackingAnnotation(self.anno_frame, anno))
+            self.annotations = final_annos
             self.anno_frame = image_np.copy()
             self.frame_queue.put(image_np)
 
-        for annotation in self.annotations:
-            annotation.step(image_np)
 
         self.draw_annotations(image_np)
 
@@ -198,6 +242,11 @@ class ImageAnnotator(ImageHandler):
 
     def close(self):
         self.frame_queue.put(None)
+
+    def draw_annotations(self, image_np):
+        for color, annotation in zip(self.colors, self.annotations):
+            if annotation.score >= self.min_confidence:
+                annotation.draw(image_np, color)
 
     def crop_annotations(self):
         frame_time = time.time()
@@ -210,11 +259,6 @@ class ImageAnnotator(ImageHandler):
                 label = "{}_{}.jpg".format(annotation.label['name'], int(frame_time))
                 path = os.path.join(self.crop_dir, label)
                 cv2.imwrite(path, annotation.crop(self.anno_frame))
-
-    def draw_annotations(self, image_np):
-        for i, annotation in enumerate(self.annotations):
-            if annotation.score >= self.min_confidence:
-                annotation.draw(image_np, (0, 255, 0))
 
 
 class AVIOutput(ImageHandler):
@@ -295,6 +339,9 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
 
         cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
         pipeline = self.setup_pipeline(options)
 
         ret, frame = cap.read()
